@@ -19,6 +19,7 @@ public async Task CanFilterProjectionWithCapturedVariable()
     Assert.NotNull(template);
 }
 
+// This works with an inline filter
 [Fact]
 public async Task CanFilterProjectionWithInlineVariable()
 {
