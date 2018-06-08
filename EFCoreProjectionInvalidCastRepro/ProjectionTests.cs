@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -19,83 +21,31 @@ namespace EFCoreProjectionInvalidCastRepro
                 using (var context = new AppDbContext())
                 {
                     context.Database.EnsureCreated();
-                    context.EmailTemplates.Add(new EmailTemplate {Id = Guid.NewGuid(), TemplateType = EmailTemplateType.PasswordResetRequest});
-                    context.SaveChanges();
                 }
 
                 _isInitialized = true;
             }
         }
 
-        // Throws System.InvalidCastException :
-        // Invalid cast from 'EFCoreProjectionInvalidCastRepro.EmailTemplateTypeDto'
-        // to 'EFCoreProjectionInvalidCastRepro.EmailTemplateType'.
+        // This throws System.NullReferenceException
+        // More details on GitHub:
+        // https://github.com/aspnet/EntityFrameworkCore/issues/12262
         [Fact]
         public async Task CanFilterProjectionWithCapturedVariable()
         {
-            var templateType = EmailTemplateTypeDto.PasswordResetRequest;
-            var template = await Context
-                .EmailTemplates
-                .Select(t => new EmailTemplateDto {Id = t.Id, TemplateType = (EmailTemplateTypeDto) t.TemplateType})
-                .Where(t => t.TemplateType == templateType)
-                .FirstOrDefaultAsync();
-            Assert.NotNull(template);
-        }
-
-        // This one succeeds, the filter condition is inlined
-        [Fact]
-        public async Task CanFilterProjectionWithInlineVariable()
-        {
-            var template = await Context
-                .EmailTemplates
-                .Select(t => new EmailTemplateDto {Id = t.Id, TemplateType = (EmailTemplateTypeDto) t.TemplateType})
-                .Where(t => t.TemplateType == EmailTemplateTypeDto.PasswordResetRequest)
-                .FirstOrDefaultAsync();
-            Assert.NotNull(template);
-        }
-
-        // The same error happends for non-async materialization
-        [Fact]
-        public void CanFilterProjectionWithCapturedVariableNonAsync()
-        {
-            var templateType = EmailTemplateTypeDto.PasswordResetRequest;
-            var template = Context
-                .EmailTemplates
-                .Select(t => new EmailTemplateDto { Id = t.Id, TemplateType = (EmailTemplateTypeDto)t.TemplateType })
-                .Where(t => t.TemplateType == templateType)
-                .FirstOrDefault();
-            Assert.NotNull(template);
+            var users = await Context
+                        .Users
+                        .Select(u => new
+                        {
+                            IsLockedOut = u.LockoutEnd > System.DateTimeOffset.Now
+                        })
+                        .ToListAsync();
+            Assert.Empty(users);
         }
     }
 
-    public class EmailTemplate
+    public class AppDbContext : IdentityDbContext<IdentityUser<Guid>, IdentityRole<Guid>, Guid>
     {
-        public Guid Id { get; set; }
-        public EmailTemplateType TemplateType { get; set; }
-    }
-
-    public enum EmailTemplateType
-    {
-        PasswordResetRequest = 0,
-        EmailConfirmation = 1
-    }
-
-    public class EmailTemplateDto
-    {
-        public Guid Id { get; set; }
-        public EmailTemplateTypeDto TemplateType { get; set; }
-    }
-
-    public enum EmailTemplateTypeDto
-    {
-        PasswordResetRequest = 0,
-        EmailConfirmation = 1
-    }
-
-    public class AppDbContext : DbContext
-    {
-        public DbSet<EmailTemplate> EmailTemplates { get; set; }
-
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
             var sqliteInMemoryConnectionString = InMemorySqliteHelper.GetSqliteInMemoryConnectionString();
